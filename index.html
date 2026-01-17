@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Student Timetable PWA</title>
+    <meta name="theme-color" content="#4f46e5">
+    <meta name="description" content="Offline Student Timetable PWA">
+    
+    <!-- Tailwind CSS (CDN for styling) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#4f46e5',
+                        secondary: '#ec4899',
+                        dark: '#1e293b'
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* Custom Styles for smoothness */
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        .card-enter { animation: slideIn 0.3s ease-out forwards; opacity: 0; transform: translateY(10px); }
+        @keyframes slideIn { to { opacity: 1; transform: translateY(0); } }
+        
+        /* Smooth scrolling */
+        html { scroll-behavior: smooth; }
+        
+        /* Hide scrollbar for clean UI */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        /* Active class for current time slot */
+        .active-slot { border-left: 4px solid #4f46e5; background-color: #eef2ff; }
+        .dark .active-slot { background-color: #312e81; border-left-color: #818cf8; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 dark:bg-slate-900 dark:text-gray-100 min-h-screen transition-colors duration-200">
+
+    <!-- Header -->
+    <header class="fixed top-0 w-full bg-white/90 dark:bg-slate-800/90 backdrop-blur-md shadow-sm z-50 px-4 py-3 flex justify-between items-center">
+        <div class="flex items-center gap-2">
+            <span class="text-2xl">📚</span>
+            <div>
+                <h1 class="font-bold text-lg leading-tight">Student Focus</h1>
+                <p id="clock" class="text-xs text-gray-500 dark:text-gray-400 font-mono">00:00:00</p>
+            </div>
+        </div>
+        <div class="flex gap-2">
+            <button id="themeToggle" class="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-slate-700 transition">
+                🌙
+            </button>
+            <button id="installBtn" class="hidden bg-primary text-white px-3 py-1.5 rounded-lg text-sm font-medium shadow-lg hover:bg-indigo-600 transition animate-pulse">
+                Install App
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="pt-20 pb-24 px-4 max-w-md mx-auto">
+        
+        <!-- Status Card -->
+        <div id="statusCard" class="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-2xl p-5 text-white shadow-xl mb-6 transform transition hover:scale-[1.02]">
+            <div class="flex justify-between items-start">
+                <span class="bg-white/20 px-2 py-0.5 rounded text-xs font-semibold backdrop-blur-sm">NOW</span>
+                <span id="nextTime" class="text-xs font-mono opacity-80">Next: --:--</span>
+            </div>
+            <h2 id="currentSubject" class="text-2xl font-bold mt-2">Loading...</h2>
+            <p id="currentActivity" class="text-indigo-100 text-sm mt-1 opacity-90">Please wait</p>
+            
+            <div class="mt-4 flex items-center gap-2 text-xs bg-black/20 p-2 rounded-lg">
+                <span id="bellIcon">🔔</span>
+                <span id="notifStatus">Enable notifications for alerts</span>
+            </div>
+        </div>
+
+        <!-- Timeline -->
+        <div class="space-y-3" id="timelineContainer">
+            <!-- Timeline items injected by JS -->
+        </div>
+    </main>
+
+    <!-- Navigation / Footer -->
+    <nav class="fixed bottom-0 w-full bg-white dark:bg-slate-800 border-t border-gray-200 dark:border-slate-700 z-40 pb-safe">
+        <div class="max-w-md mx-auto flex justify-around p-3">
+            <button onclick="window.scrollTo(0,0)" class="flex flex-col items-center text-primary">
+                <span class="text-xl">🏠</span>
+                <span class="text-[10px] mt-1">Home</span>
+            </button>
+            <button onclick="requestNotificationPermission()" class="flex flex-col items-center text-gray-500 dark:text-gray-400 hover:text-primary">
+                <span class="text-xl">🔔</span>
+                <span class="text-[10px] mt-1">Alerts</span>
+            </button>
+        </div>
+    </nav>
+
+    <script>
+        // --- 1. CONFIGURATION & DATA ---
+        const schedule = [
+            { start: "07:00", end: "07:30", subject: "Morning Routine", details: "उठना, पानी, हल्का स्ट्रेच", type: "routine" },
+            { start: "07:30", end: "08:30", subject: "English", details: "QnA, Passage, Translation", type: "study" },
+            { start: "08:30", end: "09:30", subject: "Science", details: "Concept, Diagrams, PYQs", type: "study" },
+            { start: "09:30", end: "09:50", subject: "Break", details: "नाश्ता + वॉक", type: "break" },
+            { start: "09:50", end: "11:00", subject: "Mathematics", details: "Formula, PYQs, Practice", type: "study" },
+            { start: "11:00", end: "12:00", subject: "SST", details: "Chapter Study + Notes", type: "study" },
+            { start: "12:00", end: "12:20", subject: "Break", details: "Relax", type: "break" },
+            { start: "12:20", end: "13:20", subject: "Hindi", details: "गद्य, पद्य, व्याकरण", type: "study" },
+            { start: "13:20", end: "14:00", subject: "Lunch", details: "Healthy Meal", type: "break" },
+            { start: "14:00", end: "15:00", subject: "Revision", details: "Mind Maps, Flash Cards", type: "study" },
+            { start: "15:00", end: "15:15", subject: "Break", details: "Walk", type: "break" },
+            { start: "15:15", end: "16:15", subject: "Science / SST", details: "Weak Topics Focus", type: "study" },
+            { start: "16:15", end: "17:15", subject: "PYQ Practice", details: "Previous Year Questions", type: "study" },
+            { start: "17:15", end: "18:00", subject: "Play Time", details: "Free Time / Sports", type: "break" },
+            { start: "18:00", end: "19:00", subject: "Writing Skills", details: "Answer Writing Practice", type: "study" },
+            { start: "19:00", end: "20:00", subject: "Mock Test", details: "Test (Alternate Days)", type: "study" },
+            { start: "20:00", end: "20:20", subject: "Dinner", details: "Family Time", type: "break" },
+            { start: "20:20", end: "21:30", subject: "Revision", details: "Doubt Clearing", type: "study" },
+            { start: "21:30", end: "22:15", subject: "Light Study", details: "Formula Scan", type: "study" },
+            { start: "22:15", end: "07:00", subject: "Sleep", details: "Rest & Recovery", type: "routine" }
+        ];
+
+        // --- 2. DYNAMIC MANIFEST INJECTION ---
+        // We create the manifest dynamically to keep this a single file.
+        const manifestData = {
+            "name": "Student Focus Timetable",
+            "short_name": "Timetable",
+            "start_url": ".",
+            "display": "standalone",
+            "background_color": "#ffffff",
+            "theme_color": "#4f46e5",
+            "orientation": "portrait",
+            "icons": [
+                {
+                    "src": "https://cdn-icons-png.flaticon.com/512/3209/3209265.png",
+                    "sizes": "512x512",
+                    "type": "image/png"
+                }
+            ]
+        };
+        const stringManifest = JSON.stringify(manifestData);
+        const blobManifest = new Blob([stringManifest], {type: 'application/json'});
+        const manifestURL = URL.createObjectURL(blobManifest);
+        const link = document.createElement('link');
+        link.rel = 'manifest';
+        link.href = manifestURL;
+        document.head.appendChild(link);
+
+        // --- 3. UI GENERATION ---
+        const timelineContainer = document.getElementById('timelineContainer');
+        
+        function renderTimeline() {
+            timelineContainer.innerHTML = '';
+            schedule.forEach((slot, index) => {
+                const isBreak = slot.type === 'break' || slot.type === 'routine';
+                const colorClass = isBreak ? 'bg-white dark:bg-slate-800' : 'bg-white dark:bg-slate-800';
+                const borderClass = isBreak ? 'border-l-4 border-green-400' : 'border-l-4 border-indigo-500';
+                
+                // Convert 24h to 12h for display
+                const start12 = formatTime12(slot.start);
+                const end12 = formatTime12(slot.end);
+
+                const div = document.createElement('div');
+                div.className = `p-4 rounded-lg shadow-sm border border-gray-100 dark:border-slate-700 ${colorClass} ${borderClass} card-enter transition-all duration-300`;
+                div.style.animationDelay = `${index * 0.05}s`;
+                div.id = `slot-${index}`;
+                
+                div.innerHTML = `
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">${start12} - ${end12}</span>
+                        ${slot.type === 'break' ? '☕' : (slot.type === 'routine' ? '🌙' : '📖')}
+                    </div>
+                    <h3 class="font-bold text-lg text-gray-800 dark:text-gray-100">${slot.subject}</h3>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">${slot.details}</p>
+                `;
+                timelineContainer.appendChild(div);
+            });
+        }
+
+        function formatTime12(time24) {
+            const [h, m] = time24.split(':');
+            let hour = parseInt(h);
+            const ampm = hour >= 12 ? 'PM' : 'AM';
+            hour = hour % 12;
+            hour = hour ? hour : 12;
+            return `${hour}:${m} ${ampm}`;
+        }
+
+        // --- 4. LOGIC & NOTIFICATIONS ---
+        let deferredPrompt;
+        let lastNotifiedSlot = null;
+
+        function updateState() {
+            const now = new Date();
+            const currentTime = now.getHours() * 60 + now.getMinutes();
+            const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            
+            document.getElementById('clock').innerText = timeString;
+
+            let currentSlotIndex = -1;
+            let nextSlot = null;
+
+            // Find current slot
+            for (let i = 0; i < schedule.length; i++) {
+                const s = schedule[i];
+                const startMins = timeToMins(s.start);
+                let endMins = timeToMins(s.end);
+                
+                // Handle midnight crossover for sleep
+                if (endMins < startMins) endMins += 24 * 60; 
+
+                if (currentTime >= startMins && currentTime < endMins) {
+                    currentSlotIndex = i;
+                    break;
+                }
+            }
+            
+            // Handle Sleep special case (night time logic)
+            if (currentSlotIndex === -1) {
+                // Check if it's the sleep slot crossing midnight
+                const sleepSlot = schedule[schedule.length-1];
+                const sleepStart = timeToMins(sleepSlot.start);
+                if (currentTime >= sleepStart) currentSlotIndex = schedule.length - 1;
+                else if (currentTime < timeToMins(schedule[0].start)) currentSlotIndex = schedule.length - 1;
+            }
+
+            // Update UI based on current slot
+            if (currentSlotIndex !== -1) {
+                const slot = schedule[currentSlotIndex];
+                document.getElementById('currentSubject').innerText = slot.subject;
+                document.getElementById('currentActivity').innerText = slot.details;
+                
+                // Highlight active card
+                document.querySelectorAll('.active-slot').forEach(el => el.classList.remove('active-slot'));
+                const activeCard = document.getElementById(`slot-${currentSlotIndex}`);
+                if (activeCard) {
+                    activeCard.classList.add('active-slot');
+                    // Only scroll if we haven't manually scrolled recently (simple check)
+                    // activeCard.scrollIntoView({ behavior: 'smooth', block: 'center' }); 
+                }
+                
+                // Next slot info
+                const nextIndex = (currentSlotIndex + 1) % schedule.length;
+                const nextS = schedule[nextIndex];
+                document.getElementById('nextTime').innerText = `Next: ${formatTime12(nextS.start)} (${nextS.subject})`;
+
+                // CHECK FOR NOTIFICATIONS (5 mins before NEXT slot)
+                const nextStartMins = timeToMins(nextS.start);
+                let diff = nextStartMins - currentTime;
+                if (diff < 0) diff += 24 * 60; // Handle midnight wrap
+
+                if (diff === 5 && lastNotifiedSlot !== nextIndex) {
+                    sendNotification(`Upcoming: ${nextS.subject}`, `In 5 mins: ${nextS.details}`);
+                    lastNotifiedSlot = nextIndex;
+                }
+            }
+        }
+
+        function timeToMins(timeStr) {
+            const [h, m] = timeStr.split(':').map(Number);
+            return h * 60 + m;
+        }
+
+        function requestNotificationPermission() {
+            if (!("Notification" in window)) {
+                alert("This browser does not support desktop notifications");
+                return;
+            }
+            Notification.requestPermission().then(permission => {
+                const status = document.getElementById('notifStatus');
+                if (permission === "granted") {
+                    status.innerText = "Notifications Active ✅";
+                    new Notification("Setup Complete", { body: "You will be notified 5 mins before each task." });
+                } else {
+                    status.innerText = "Notifications Denied ❌";
+                }
+            });
+        }
+
+        function sendNotification(title, body) {
+            if (Notification.permission === "granted") {
+                // Try Service Worker notification first (better for mobile)
+                if (navigator.serviceWorker.controller) {
+                    navigator.serviceWorker.ready.then(registration => {
+                        registration.showNotification(title, {
+                            body: body,
+                            icon: 'https://cdn-icons-png.flaticon.com/512/2907/2907253.png',
+                            vibrate: [200, 100, 200]
+                        });
+                    });
+                } else {
+                    // Fallback to standard API
+                    new Notification(title, { body: body, icon: 'https://cdn-icons-png.flaticon.com/512/2907/2907253.png' });
+                }
+            }
+        }
+
+        // --- 5. SERVICE WORKER (EMBEDDED) ---
+        // We embed the SW code as a string to allow offline capability in a single file
+        const swCode = `
+            const CACHE_NAME = 'timetable-v1';
+            
+            self.addEventListener('install', (event) => {
+                self.skipWaiting();
+                event.waitUntil(
+                    caches.open(CACHE_NAME).then((cache) => {
+                        return cache.addAll([
+                            './', // Cache the page itself
+                            'https://cdn.tailwindcss.com'
+                        ]);
+                    })
+                );
+            });
+
+            self.addEventListener('activate', (event) => {
+                event.waitUntil(clients.claim());
+            });
+
+            self.addEventListener('fetch', (event) => {
+                // Respond with cache first, then network
+                event.respondWith(
+                    caches.match(event.request).then((response) => {
+                        return response || fetch(event.request).catch(() => {
+                            // Offline fallback logic could go here
+                        });
+                    })
+                );
+            });
+        `;
+
+        // Register the SW via Blob
+        if ('serviceWorker' in navigator) {
+            const blob = new Blob([swCode], { type: 'text/javascript' });
+            const swUrl = URL.createObjectURL(blob);
+            navigator.serviceWorker.register(swUrl)
+                .then(reg => console.log('SW Registered!', reg))
+                .catch(err => console.error('SW Failed', err));
+        }
+
+        // --- 6. PWA INSTALLATION LOGIC ---
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            const installBtn = document.getElementById('installBtn');
+            installBtn.classList.remove('hidden');
+            
+            installBtn.addEventListener('click', () => {
+                installBtn.classList.add('hidden');
+                deferredPrompt.prompt();
+                deferredPrompt.userChoice.then((choiceResult) => {
+                    if (choiceResult.outcome === 'accepted') {
+                        console.log('User accepted the A2HS prompt');
+                    }
+                    deferredPrompt = null;
+                });
+            });
+        });
+
+        // --- 7. INITIALIZATION ---
+        // Dark Mode Logic
+        const themeToggle = document.getElementById('themeToggle');
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.body.classList.add('dark');
+            themeToggle.innerText = '☀️';
+        }
+        themeToggle.addEventListener('click', () => {
+            document.body.classList.toggle('dark');
+            themeToggle.innerText = document.body.classList.contains('dark') ? '☀️' : '🌙';
+        });
+
+        // Start App
+        renderTimeline();
+        updateState();
+        setInterval(updateState, 1000); // Check every second for clock, logic handles notification timing
+
+        // Wake Lock (Prevent screen from sleeping if needed, though battery intensive)
+        /* if ('wakeLock' in navigator) {
+            let wakeLock = null;
+            const requestWakeLock = async () => {
+                try {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                } catch (err) {}
+            };
+            document.addEventListener('visibilitychange', async () => {
+                if (wakeLock !== null && document.visibilityState === 'visible') {
+                    requestWakeLock();
+                }
+            });
+        } 
+        */
+    </script>
+</body>
+</html>
+
